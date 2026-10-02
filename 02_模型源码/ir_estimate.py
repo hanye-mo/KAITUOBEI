@@ -6,6 +6,7 @@
      IRST 点目标探测门限取 1e-7 W/m²（波段积分、冷却型探测器量级）
 """
 import os
+import sys
 import numpy as np
 import matplotlib
 
@@ -16,7 +17,11 @@ plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei"]
 plt.rcParams["axes.unicode_minus"] = False
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "export", "ir")
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+from lib.paths import export_dir
+
+OUT = export_dir("ir")
 os.makedirs(OUT, exist_ok=True)
 
 C1, C2 = 3.1438e8, 1.4388e-3          # 光速×1e9(nm→m 换算入内) / 第二辐射常数

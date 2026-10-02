@@ -1,6 +1,16 @@
 # -*- coding: utf-8 -*-
-"""一键构建/导出/渲染总控
-用法: blender --background --factory-startup --python build_all.py -- build|render|export|render_seq
+"""一键构建/导出/渲染总控（Blender Python）
+
+用法: blender --background --factory-startup --python build_all.py -- <step>
+步骤（大小写不敏感，对应《建模方案》§4.3 S1→S7 与常用组合）:
+  s1            参数/截面自检（不建几何）
+  s2..s6        构建全部部件，打印对应步骤 bbox 自检，s6 写 check_report.json
+  s7            导出 STL + 渲染静帧 + 分离动画（全流程）
+  build/export  构建 + 导出（不出图）
+  render        构建 + 渲染静帧
+  render_seq    构建 + 分离动画
+  all           构建 + 导出 + 渲染 + 动画
+产物写入交付物根目录（默认同级 03_交付物/，环境变量 THUNDER_OUT 可覆盖），见 lib/paths.py。
 """
 import bpy
 import sys
@@ -17,9 +27,51 @@ if HERE not in sys.path:
 from asm.build_scenes import build_everything
 from builders.common import union_bbox
 from lib import params as P
+from lib.paths import export_dir, report_path, blend_path
 
-OUT = os.path.join(HERE, "export")
+OUT = export_dir()
 REPORT = {"engine": None, "bboxes": {}, "counts": {}, "notes": [], "errors": []}
+
+# 步骤 → 说明（与《建模方案》§4.3 S1→S7 对应；其余为组合快捷方式）
+STEPS = {
+    "s1": "S1 参数/截面自检（不建几何）",
+    "s2": "S2 构建部件，自检锐矛 bbox",
+    "s3": "S3 构建部件，自检影刃 bbox",
+    "s4": "S4 构建部件，自检支架/整流罩",
+    "s5": "S5 构建部件，自检助推器",
+    "s6": "S6 场景/关键帧 bbox 全量自检，写 check_report.json",
+    "s7": "S7 导出 STL + 渲染静帧 + 分离动画",
+    "build": "构建 + 导出（不出图）",
+    "export": "构建 + 导出（不出图）",
+    "render": "构建 + 渲染静帧",
+    "render_seq": "构建 + 分离动画",
+    "all": "构建 + 导出 + 渲染 + 动画",
+}
+EXPORT_STEPS = ("build", "export", "all", "s7")
+RENDER_STEPS = ("render", "all", "s7")
+SEQ_STEPS = ("render_seq", "all", "s7")
+
+
+def usage(err=None):
+    if err:
+        print(f"[USAGE] {err}")
+    print("[USAGE] blender --background --factory-startup --python build_all.py -- <step>")
+    for k, v in STEPS.items():
+        print(f"[USAGE]   {k:<11} {v}")
+    sys.exit(2)
+
+
+def parse_step():
+    """解析 `--` 之后的步骤参数；缺失/未知直接报用法并退出（不静默全量构建）。"""
+    argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    if not argv:
+        usage("缺少步骤参数（`--` 后为空）")
+    step = argv[0].lower()
+    if argv[1:]:
+        usage(f"多余参数 {argv[1:]!r}，一次只接受一个步骤")
+    if step not in STEPS:
+        usage(f"未知步骤 {argv[0]!r}")
+    return step
 
 
 def setup_scene(scene):
@@ -36,7 +88,9 @@ def setup_scene(scene):
 
 
 def probe_engine(scene):
-    """EEVEE(快) → Cycles CPU，探测可用性（临时相机+灯光）"""
+    """EEVEE(快) → Cycles CPU，探测可用性（临时相机+灯光）。
+    判据只看 RGB 通道灰度差：RGBA 的 Alpha 恒为 1 时，纯黑不透明图也会给出
+    spread=1 的假通过；两引擎都失败则中止（不强行回退 Cycles）。"""
     os.makedirs(OUT, exist_ok=True)
     cam = bpy.data.cameras.new("probe_cam")
     cam.clip_start = 0.1
@@ -50,36 +104,38 @@ def probe_engine(scene):
     sob = bpy.data.objects.new("probe_sun", sun)
     scene.collection.objects.link(sob)
     sob.rotation_euler = (math.radians(45), 0, math.radians(30))
-    probe_mesh = bpy.data.objects.get("RM_Body")
+    probe_png = os.path.join(OUT, "_probe.png")
     candidates = ['BLENDER_EEVEE_NEXT', 'CYCLES']
     for eng in candidates:
         try:
             scene.render.engine = eng
             scene.render.resolution_x, scene.render.resolution_y = 64, 64
-            scene.render.filepath = os.path.join(OUT, "_probe.png")
+            scene.render.filepath = probe_png
             if eng == 'CYCLES':
                 scene.cycles.device = 'CPU'
                 scene.cycles.samples = 4
             scene.camera = cob
             bpy.ops.render.render(write_still=True)
-            img = bpy.data.images.load(os.path.join(OUT, "_probe.png"))
+            img = bpy.data.images.load(probe_png)
             px = list(img.pixels[:4096])
             bpy.data.images.remove(img)
-            spread = max(px) - min(px)
-            REPORT["notes"].append(f"probe {eng}: spread={spread:.3f}")
+            rgb = px[0::4] + px[1::4] + px[2::4]     # 剔除 Alpha 通道
+            spread = max(rgb) - min(rgb)
+            REPORT["notes"].append(f"probe {eng}: rgb_spread={spread:.3f}")
             if spread > 0.02:
                 REPORT["engine"] = eng
                 break
         except Exception as e:
             REPORT["notes"].append(f"probe {eng} FAIL: {e}")
-    if REPORT["engine"] is None:
-        REPORT["engine"] = 'CYCLES'
-    scene.render.engine = REPORT["engine"]
-    # 探测相机/灯光用后即删（否则 probe_sun 3.0 会存入 blend 洗白所有渲染）
-    for nm in ("probe_cam", "probe_sun", "probe_mesh"):
+    for nm in ("probe_cam", "probe_sun"):
         ob = bpy.data.objects.get(nm)
         if ob:
             bpy.data.objects.remove(ob, do_unlink=True)
+    if REPORT["engine"] is None:
+        raise RuntimeError(
+            "渲染引擎探测失败（EEVEE/Cycles 均无法出图，不强行回退）："
+            + "; ".join(n for n in REPORT["notes"] if n.startswith("probe")))
+    scene.render.engine = REPORT["engine"]
     if REPORT["engine"] == 'CYCLES':
         scene.cycles.device = 'CPU'
         scene.cycles.samples = 24
@@ -92,7 +148,7 @@ def probe_engine(scene):
     else:
         scene.render.resolution_x, scene.render.resolution_y = 1920, 1080
     try:
-        os.remove(os.path.join(OUT, "_probe.png"))
+        os.remove(probe_png)
     except OSError:
         pass
 
@@ -147,7 +203,7 @@ def do_export(ctx):
             REPORT["notes"].append("3MF exporter 不存在(4.5 仅内置导入) → 按 §0.3 降级 STL+BLEND")
     except Exception as e:
         REPORT["notes"].append(f"3MF check error: {e}")
-    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(HERE, "thunder.blend"))
+    bpy.ops.wm.save_as_mainfile(filepath=blend_path())
 
 
 def bbox_report(ctx):
@@ -215,6 +271,39 @@ def bbox_report(ctx):
         # C1 锐矛单机（质量集中在弹体几何形心附近——工程近似）
         cg["C1"] = {"cg_x_mm": cg["rm"]["centroid_mm"][0]}
     REPORT["centroid"] = cg
+
+
+def step_s1():
+    """S1 参数/截面自检（《建模方案》§4.3）：RM 各站位截面积落在 0.60–0.88×(2s·h) 带内，
+    RM/YR 截面点数正确且无退化点；不通过则抛错中止。"""
+    from lib import profiles, params as _P
+    bad = []
+    for tag, xs, ss, hs, (ep, eq) in (
+            ("RM", _P.RM_X, _P.RM_S, _P.RM_H, (_P.RM_SE_P, _P.RM_SE_Q)),
+            ("YR", _P.YR_X, _P.YR_S, _P.YR_H, (_P.YR_SE_P, _P.YR_SE_Q))):
+        for i in range(1, len(xs)):
+            s, h = ss[i], hs[i]
+            if s <= 1e-9 or h <= 1e-9:
+                continue
+            poly = profiles.arch_pts(s, h, p=ep, q=eq)
+            finite = all(math.isfinite(v) for pt in poly for v in pt)
+            ratio = profiles.polygon_area(poly) / (2 * s * h)
+            ok = finite and len(poly) >= 8 and (tag != "RM" or 0.60 <= ratio <= 0.88)
+            REPORT["notes"].append(f"s1 {tag}@x={xs[i]}: n={len(poly)} ratio={ratio:.3f} "
+                                   f"{'OK' if ok else 'FAIL'}")
+            if not ok:
+                bad.append(f"{tag}@x={xs[i]} ratio={ratio:.3f} finite={finite}")
+    if bad:
+        raise RuntimeError("S1 截面自检失败（RM 目标带 0.60–0.88）: " + "; ".join(bad))
+    print("[S1] 参数/截面自检通过")
+
+
+def print_dims(names):
+    b = REPORT["bboxes"]
+    for nm in names:
+        v = b.get(nm)
+        if v:
+            print(f"[BBOX] {nm:<10s} min={v['min']} max={v['max']}")
 
 
 def render_stills(ctx):
@@ -292,28 +381,50 @@ def render_seq(ctx):
             c.hide_render = False
 
 
-def main():
-    argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else ["build"]
-    step = argv[0]
-    scene = bpy.context.scene
-    setup_scene(scene)
-    ctx = build_everything(scene)
-    print("[BUILD] parts done")
-    probe_engine(scene)
-    print("[ENGINE]", REPORT["engine"])
-    bbox_report(ctx)
-    if step in ("build", "export", "all"):
-        do_export(ctx)
-        print("[EXPORT] done")
-    if step in ("render", "all"):
-        render_stills(ctx)
-        print("[RENDER] stills done")
-    if step in ("render_seq", "all"):
-        render_seq(ctx)
-        print("[RENDER] seq done")
-    with open(os.path.join(HERE, "check_report.json"), "w", encoding="utf-8") as f:
+def write_report():
+    with open(report_path(), "w", encoding="utf-8") as f:
         json.dump(REPORT, f, ensure_ascii=False, indent=1)
+    print("[REPORT]", report_path())
     print("[REPORT]", json.dumps(REPORT["bboxes"], ensure_ascii=False))
 
 
-main()
+def main():
+    step = parse_step()
+    scene = bpy.context.scene
+    if step == "s1":                       # 纯参数自检：不建几何、不探测引擎
+        step_s1()
+        write_report()
+        return
+    setup_scene(scene)
+    ctx = build_everything(scene)
+    print("[BUILD] parts done")
+    bbox_report(ctx)
+    if step == "s2":
+        print_dims(("rm_body", "rm_missile"))
+    elif step == "s3":
+        print_dims(("yr_body", "yr_uav"))
+    elif step == "s4":
+        print_dims(("brackets", "fa_right", "fa_left"))
+        print("[COUNT] portholes =", REPORT["counts"].get("portholes"))
+    elif step == "s5":
+        print_dims(("booster", "bo_fins"))
+    elif step == "s6":
+        print_dims(("SC_A", "rm_body", "yr_body"))
+        print("[KFRAMES]", P.K_FRAMES)
+    if step in RENDER_STEPS or step in SEQ_STEPS:
+        probe_engine(scene)
+        print("[ENGINE]", REPORT["engine"])
+    if step in EXPORT_STEPS:
+        do_export(ctx)
+        print("[EXPORT] done")
+    if step in RENDER_STEPS:
+        render_stills(ctx)
+        print("[RENDER] stills done")
+    if step in SEQ_STEPS:
+        render_seq(ctx)
+        print("[RENDER] seq done")
+    write_report()
+
+
+if __name__ == "__main__":
+    main()

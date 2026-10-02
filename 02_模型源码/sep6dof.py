@@ -7,6 +7,7 @@
 输出：export/sim6dof/ sep_traj.png sep_gap.png sep_attitude.png sep6dof.csv + 控制台判据表
 """
 import os
+import sys
 import numpy as np
 import matplotlib
 
@@ -17,7 +18,11 @@ plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei"]
 plt.rcParams["axes.unicode_minus"] = False
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "export", "sim6dof")
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+from lib.paths import export_dir
+
+OUT = export_dir("sim6dof")
 os.makedirs(OUT, exist_ok=True)
 
 # ---- 环境与飞行条件（§2.3.1）----

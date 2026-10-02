@@ -1,0 +1,22 @@
+# 迅雷_交接包 / 02_模型源码 —— 依赖清单与运行边界
+#
+# 两类运行环境，边界如下：
+#
+# ① 普通 Python（≥3.11，本包按 3.14 交接）：装本文件依赖后直接运行
+#    - check.py            尺寸自检（读 check_report.json，有退出码）
+#    - patch_v3.py / patch_anim.py   历史补丁（可重复执行，经 lib/patchutil）
+#    - lib/params.py · lib/profiles.py · lib/paths.py · lib/patchutil.py（纯 Python）
+#      → `python lib/profiles.py` 为 S1 自检
+#    - aero_analytic.py · aero_shockexp.py · rcs_sim.py · rcs_realistic.py
+#      · sep6dof.py · ir_estimate.py · tps_sizing.py · mesh_watertight.py
+#      （这批脚本对 bpy/bmesh/mathutils 做了 stub 或不经它们，numpy/matplotlib 即可）
+#
+# ② Blender 4.5+ 自带 Python（blender --background --factory-startup --python ...）：
+#    不装第三方包，仅用 bpy/bmesh
+#    - build_all.py        一键构建（-- s1..s7 / build / render / render_seq / all）
+#    - export_merged.py · verify_stl.py · render_detail.py
+#
+# 产物统一写入交付物根目录（默认源码同级 03_交付物/，环境变量 THUNDER_OUT 可覆盖），
+# 路径解析集中在 lib/paths.py，任何脚本不得自行拼 export/ 相对路径。
+numpy>=1.24
+matplotlib>=3.7

@@ -11,6 +11,7 @@
 """
 import struct
 import os
+import sys
 import numpy as np
 import matplotlib
 
@@ -21,8 +22,12 @@ plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei"]
 plt.rcParams["axes.unicode_minus"] = False
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-STL = os.path.join(HERE, "export", "stl")
-OUT = os.path.join(HERE, "export", "rcs")
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+from lib.paths import export_dir
+
+STL = export_dir("stl")
+OUT = export_dir("rcs")
 os.makedirs(OUT, exist_ok=True)
 
 THRESH_DB = 10 * np.log10(0.008)          # −21.07 dBsm

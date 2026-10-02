@@ -7,6 +7,7 @@
 输出：export/rcs/ rcs_realistic.csv + rcs_realistic_10GHz.png + 控制台统计
 """
 import os
+import sys
 import numpy as np
 import matplotlib
 
@@ -19,7 +20,11 @@ plt.rcParams["axes.unicode_minus"] = False
 from rcs_sim import load_stl, subdivide, prep, THRESH_DB
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "export", "rcs")
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+from lib.paths import export_dir
+
+OUT = export_dir("rcs")
 FREQS = [8e9, 10e9, 12e9]
 AZ = np.radians(np.arange(-180.0, 180.01, 0.5))
 INSTALL = np.array([2.7, 0.0, 0.68])           # 影刃全局安装位（m）
@@ -52,7 +57,7 @@ def main():
           "X 波段近透明（<1dB）；也低于 S 波段遥测频点 → 无通信黑障\n")
 
     # ---- 网格（先滤退化面；反转 SC_C2 的 -9° 迎角展示旋转回 α=0 再分区）----
-    tris = subdivide(load_stl(os.path.join(HERE, "export", "stl", "sc_c2.stl")), 0.012, "影刃展开态")
+    tris = subdivide(load_stl(export_dir(os.path.join("stl", "sc_c2.stl"))), 0.012, "影刃展开态")
     araw = 0.5 * np.linalg.norm(np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0]), axis=1)
     tris = tris[araw > 1e-9]
     th = np.radians(9.0)                       # 撤销 rig2 的 R_y(−9°)

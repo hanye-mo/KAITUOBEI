@@ -6,10 +6,13 @@
 输出：export/aero/ aero_shockexp.png aero_shockexp.csv + 控制台判定
 """
 import os
+import sys
 import math
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -18,8 +21,9 @@ plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei"]
 plt.rcParams["axes.unicode_minus"] = False
 
 from aero_analytic import oblique_shock_cp, A_REF
+from lib.paths import export_dir
 
-OUT = os.path.join(HERE, "export", "aero")
+OUT = export_dir("aero")
 ALPHAS = np.arange(0.5, 16.01, 0.5)
 S_BELLY_EFF = 1.0                      # 平底投影占 A_ref 比例（S_belly≈A_ref=5.85）
 

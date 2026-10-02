@@ -20,10 +20,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from lib import params as P
 from lib.profiles import interp, scaled_arch
+from lib.paths import export_dir
 from builders.missile import _nose_g
 from builders import fairing as FA
 
-OUT = os.path.join(HERE, "export", "mesh")
+OUT = export_dir("mesh")
 os.makedirs(OUT, exist_ok=True)
 MM = 1e-3
 

@@ -15,14 +15,24 @@
 
 ## 核心操作（02_模型源码/ 内执行）
 
+产物统一写入 03_交付物/（源码目录被单独拷出时落在源码旁；环境变量 `THUNDER_OUT` 可指定其它交付物根目录）。
+
 ```bash
 # 全量重建模型+导出+渲染+动画（约 20 分钟）
 blender --background --factory-startup --python build_all.py -- all
 # 仅构建+导出（不出图）
 blender --background --factory-startup --python build_all.py -- build
-# 尺寸自检（读 check_report.json）
-python check.py          # 当前：PASS=13 / DEV=3 / FAIL=0
+# 按《建模方案》§4.3 分步执行（S1→S7，每步含自检；大小写不敏感）
+blender --background --factory-startup --python build_all.py -- s1   # 参数/截面自检
+blender --background --factory-startup --python build_all.py -- s6   # 构建+场景，写 check_report.json
+blender --background --factory-startup --python build_all.py -- s7   # 导出 STL+渲染+动画
+# 尺寸自检（读 03_交付物/check_report.json；全部由 build_all 实测，不填固定值）
+python check.py          # 全表；退出码 0=无 FAIL，1=有 FAIL，2=报告缺失/用法错误
+python check.py s5       # 只看某一步相关项
 ```
+
+依赖：普通 Python 脚本需 `python -m pip install -r 02_模型源码/requirements.txt`（numpy/matplotlib）；
+Blender 脚本只用 bpy/bmesh，不装第三方包。普通 Python / Blender Python 的脚本边界见该文件头部注释。
 
 ## 仿真脚本（02_模型源码/，python 直接跑，输出进 export/ 对应目录）
 

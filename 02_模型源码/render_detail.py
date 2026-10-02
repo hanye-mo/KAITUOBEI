@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """V5 细节特写预览：临时相机拍特写
 用法: blender --background thunder.blend --python render_detail.py -- <shot>...
+shot 名省略或未知时打印全部可用项并退出（不渲染）。
+输出写入交付物 export/detail/（lib.paths 解析，默认 03_交付物/）。
 """
 import bpy
 import sys
@@ -8,15 +10,10 @@ import os
 from mathutils import Vector
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
 
-scene = bpy.context.scene
-scene.render.engine = 'BLENDER_EEVEE_NEXT'
-scene.render.resolution_x, scene.render.resolution_y = 1600, 900
-try:
-    scene.eevee.shadow_pool_size = 8192
-except Exception:
-    pass
+from lib.paths import export_dir
 
 # (名称, 状态集合, 相机位置, 目标, 镜头)
 SHOTS = {
@@ -32,24 +29,50 @@ SHOTS = {
     "c2_nose":   ("SC_C2", (2450, -800, 950), (2900, 0, 820), 50),     # 鼻尖+空速管
     "c1_over":   ("SC_C1", (3300, -5200, 2200), (1800, 0, 200), 50),   # C1 中段整体
 }
-out = os.path.join(HERE, "export", "detail")
-os.makedirs(out, exist_ok=True)
 
-for arg in argv:
-    cname, loc, tgt, lens = SHOTS[arg]
+
+def main():
+    argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    bad = [a for a in argv if a not in SHOTS]
+    if not argv or bad:
+        print("[DETAIL] 用法: blender --background thunder.blend --python render_detail.py -- <shot>...")
+        print(f"[DETAIL] 未知 shot: {bad}" if bad else "[DETAIL] 未指定 shot")
+        print("[DETAIL] 可用 shot: " + " ".join(sorted(SHOTS)))
+        sys.exit(2)
+
+    scene = bpy.context.scene
+    scene.render.engine = 'BLENDER_EEVEE_NEXT'
+    scene.render.resolution_x, scene.render.resolution_y = 1600, 900
+    try:
+        scene.eevee.shadow_pool_size = 8192
+    except Exception:
+        pass
+
+    out = export_dir("detail")
+    os.makedirs(out, exist_ok=True)
+
+    for arg in argv:
+        cname, loc, tgt, lens = SHOTS[arg]
+        for c in bpy.data.collections:
+            if c.name.startswith("SC_"):
+                c.hide_render = (c.name != cname)
+        cam = bpy.data.cameras.new("tmp_" + arg)
+        cam.lens = lens
+        cam.clip_start = 10.0
+        cam.clip_end = 100000.0
+        co = bpy.data.objects.new("tmp_" + arg, cam)
+        scene.collection.objects.link(co)
+        co.location = loc
+        co.rotation_euler = (Vector(tgt) - Vector(loc)).to_track_quat('-Z', 'Y').to_euler()
+        scene.camera = co
+        scene.render.filepath = os.path.join(out, arg + ".png")
+        bpy.ops.render.render(write_still=True)
+        bpy.data.objects.remove(co, do_unlink=True)
+        print("[DETAIL OK]", arg)
     for c in bpy.data.collections:
         if c.name.startswith("SC_"):
-            c.hide_render = (c.name != cname)
-    cam = bpy.data.cameras.new("tmp_" + arg)
-    cam.lens = lens
-    cam.clip_start = 10.0
-    cam.clip_end = 100000.0
-    co = bpy.data.objects.new("tmp_" + arg, cam)
-    scene.collection.objects.link(co)
-    co.location = loc
-    co.rotation_euler = (Vector(tgt) - Vector(loc)).to_track_quat('-Z', 'Y').to_euler()
-    scene.camera = co
-    scene.render.filepath = os.path.join(out, arg + ".png")
-    bpy.ops.render.render(write_still=True)
-    bpy.data.objects.remove(co, do_unlink=True)
-    print("[DETAIL OK]", arg)
+            c.hide_render = False
+
+
+if __name__ == "__main__":
+    main()

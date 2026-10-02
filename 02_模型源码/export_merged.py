@@ -13,6 +13,7 @@ if HERE not in sys.path:
 
 from asm.build_scenes import build_everything
 from builders.common import boolean, union_bbox
+from lib.paths import export_dir
 
 
 def island_count(obj):
@@ -99,7 +100,8 @@ def main():
     print(f"[MERGE] bbox  max={tuple(round(v,1) for v in mx)}")
     print(f"[MERGE] tris={tris}  islands={island_count(result)}  time={time.time()-t0:.0f}s")
 
-    out = os.path.join(HERE, "export", "stl", "sc_a_merged.stl")
+    out = export_dir(os.path.join("stl", "sc_a_merged.stl"))
+    os.makedirs(os.path.dirname(out), exist_ok=True)
     bpy.ops.object.select_all(action='DESELECT')
     result.select_set(True)
     bpy.context.view_layer.objects.active = result
@@ -107,4 +109,5 @@ def main():
     print("[MERGE] saved:", out, os.path.getsize(out), "bytes")
 
 
-main()
+if __name__ == "__main__":
+    main()

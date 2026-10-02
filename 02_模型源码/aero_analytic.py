@@ -30,10 +30,11 @@ plt.rcParams["axes.unicode_minus"] = False
 
 from lib import params as P
 from lib.profiles import interp, scaled_arch
+from lib.paths import export_dir
 from builders.missile import _nose_g
 from builders import fairing as FA
 
-OUT = os.path.join(HERE, "export", "aero")
+OUT = export_dir("aero")
 os.makedirs(OUT, exist_ok=True)
 A_REF = 5.85
 ALPHAS = np.arange(0.0, 20.01, 0.5)

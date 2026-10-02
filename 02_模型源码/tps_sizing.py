@@ -6,6 +6,7 @@
 输出：export/thermal/ tps_profile.png tps_mass.csv + 质量对照（预算 1100kg）
 """
 import os
+import sys
 import math
 import numpy as np
 import matplotlib
@@ -16,8 +17,12 @@ import matplotlib.pyplot as plt
 plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei"]
 plt.rcParams["axes.unicode_minus"] = False
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+from lib.paths import export_dir
 
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "export", "thermal")
+OUT = export_dir("thermal")
 os.makedirs(OUT, exist_ok=True)
 
 T_AMB, T_LIMIT, T_MISSION = 300.0, 600.0, 480.0
